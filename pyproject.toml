@@ -1,0 +1,102 @@
+[project]
+name = "senior-copilot-mcp-rag-assignment"
+version = "0.1.0"
+description = "Alarm Investigation & Procedure Guidance Copilot — MCP server + document RAG in one workflow"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+dependencies = [
+    # API simulator + copilot backend
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sse-starlette>=2.1",
+    # Alarm API connector. Deliberately `httpx` (1.x), NOT the `httpx2` that mcp 2.x
+    # pulls in: `respx` and FastAPI's TestClient both target httpx 1.x. Both stacks end
+    # up installed side by side; they do not conflict. See docs/known-limitations.md.
+    "httpx>=0.28",
+    "tenacity>=9.0",
+    # MCP. Pinned EXACTLY: 2.x renamed FastMCP -> MCPServer and moved to snake_case
+    # schema attributes, so a floating pin would silently break the server.
+    "mcp==2.2.0",
+    # LLM: no SDK. The Google Generative Language API is called over the `httpx` already
+    # required above — see apps/backend/llm/gemini.py for why its REST surface is used
+    # directly rather than through an OpenAI-compatible shim.
+    # RAG. llama-index-core is used for heading-aware chunking only; embeddings go
+    # through fastembed (ONNX, ~50MB) and the vector store is driven via qdrant-client
+    # directly. This deliberately avoids llama-index-embeddings-huggingface, which
+    # depends on sentence-transformers -> torch (~2.5GB) and would dominate install time.
+    "llama-index-core>=0.12",
+    "fastembed>=0.8",
+    "qdrant-client>=1.12",
+    "rank-bm25>=0.2.2",
+    "pypdf>=5.1",
+    # Planner validates proposed tool arguments against the MCP-advertised input_schema
+    "jsonschema>=4.23",
+    # Ops
+    "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "respx>=0.22",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    # Renders docs/architecture-diagram.png. Declared rather than relied on transitively
+    # (fastembed pulls it in) because `tests/unit/test_docs.py` imports the renderer to
+    # assert the diagram still contains every element the guidelines require.
+    "pillow>=11",
+]
+# Optional heavyweight embedding backend. Not needed: fastembed serves the same
+# bge-small-en-v1.5 weights. Install with `uv sync --extra st` to compare quality.
+st = ["sentence-transformers>=3.3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["apps", "connectors", "rag", "mcp-servers/alarm_management"]
+
+[tool.pytest.ini_options]
+# `mcp-servers` is hyphenated per the assignment's mandated structure, so it is not
+# importable itself; the package inside it is. Adding it to pythonpath lets tests do
+# `import alarm_management.server` while keeping the mandated directory name.
+pythonpath = [".", "mcp-servers"]
+testpaths = ["tests", "rag/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "live: hits the real Gemini API; requires GEMINI_API_KEY (deselected in CI)",
+]
+
+[tool.coverage.run]
+source = ["apps", "connectors", "rag", "mcp-servers"]
+omit = ["*/tests/*", "*/__init__.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+ignore = ["B008"]  # FastAPI Depends() in defaults is idiomatic
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+mypy_path = "mcp-servers"
+ignore_missing_imports = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+exclude = ["apps/frontend"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "rag.tests.*"]
+disallow_untyped_defs = false

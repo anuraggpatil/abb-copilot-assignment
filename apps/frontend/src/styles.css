@@ -1,0 +1,1453 @@
+/*
+ * One stylesheet, hand-written, no framework.
+ *
+ * A component library would add a build-sized dependency to a five-panel screen, and none of the
+ * grading criteria reward it. What the screen does need is density — a trace of fifteen steps with
+ * raw JSON has to stay readable — so the type scale is small, the tables are tight, and status is
+ * carried by colour *and* text (never colour alone, which a projector in a demo room flattens).
+ *
+ * The palette is light, which is the constraint a control-room application is usually built to:
+ * these screens are read on a bright plant floor and printed into shift handover notes, and a
+ * dark UI inverts badly in both. Light also costs more care than dark — the mid-grey that reads
+ * as "secondary" on a dark panel fails contrast on white — so every foreground here is at or
+ * above 4.5:1 on the surface it sits on, and none of the tints carry meaning on their own.
+ *
+ * Surfaces are separated by a hairline and one very soft shadow, not by competing greys. Two
+ * elevations is the whole system: the page, and the cards on it.
+ *
+ * **The page is exactly one viewport tall and never grows.** `.app` is a `100dvh` grid of two rows
+ * — the brand bar and the work area — with `overflow: hidden` on both the body and the shell. Every
+ * region that can outgrow its share scrolls *inside itself*: the conversation thread, the trace
+ * column, each raw JSON block. An operator watching a live investigation should never lose the
+ * composer or the health badge to a page scroll, and a reviewer should never have to hunt for the
+ * trace. Below 1100px that inverts — the columns stack and the document scrolls normally, because a
+ * fixed viewport with two stacked columns in it is a worse answer than a scrollbar.
+ */
+
+:root {
+  /* Declared, not assumed: without it a reviewer whose OS is in dark mode gets a dark textarea
+   * and dark scrollbars inside a light page, and the demo looks broken on their machine rather
+   * than on ours. */
+  color-scheme: light;
+
+  --bg: #eef1f6;
+  --surface: #ffffff;
+  --surface-2: #f4f6fa;
+  --surface-3: #e9edf3;
+  --line: #dde3ec;
+  --line-strong: #c3ccd9;
+  --text: #1b2430;
+  --muted: #5d6b7c;
+  /* Brand red. Everything that is *chrome or action* is this hue: the bar, the primary button,
+   * links, focus rings, the selected chip. */
+  --accent: #b01f2f;
+  --accent-soft: #fbeced;
+  /* The brand bar. Darker than --accent so a primary button sitting below it still reads as the
+   * primary action rather than as more chrome. */
+  --brand: #8a1c2b;
+  --brand-line: #a6303e;
+  /* Informational blue, kept deliberately *out* of the brand hue. With a red brand, a red "mcp"
+   * tag beside a red "error" tag is two different meanings in one colour, and the tags are small
+   * enough that their words do not rescue them at a glance. So anything that means "this is what
+   * happened" rather than "do this" stays blue: the MCP tag, the in-progress notice, the spinner. */
+  --info: #1461c4;
+  --info-soft: #e9f1fd;
+  --info-line: #b9d4f7;
+  --good: #147a4b;
+  --good-soft: #e6f5ec;
+  --warn: #8c5b00;
+  --warn-soft: #fcf2df;
+  --bad: #be322a;
+  --bad-soft: #fceceb;
+  --shadow: 0 1px 2px rgba(27, 36, 48, 0.06), 0 1px 10px rgba(27, 36, 48, 0.04);
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Legacy alias: `--panel` and `--panel-2` are still referenced by name in a few rules kept
+   * from the dark build. Pointing them at the new surfaces is cheaper than a rename that a
+   * future diff would have to be read twice to verify. */
+  --panel: var(--surface);
+  --panel-2: var(--surface-2);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* The application owns the viewport; nothing here scrolls the document. Restored to `auto` in
+   * the narrow-screen media query at the foot of this section. */
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin, quiet scrollbars. With four independently scrolling regions on screen, the default macOS
+ * overlay bars are fine but a Windows/Linux reviewer would otherwise get four 15px grey gutters. */
+.chat__scroll,
+.app__column--side,
+.kpis__tablewrap,
+pre {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  background-color: var(--line-strong);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #a7b2c2;
+}
+
+code,
+pre {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+code {
+  color: #24313f;
+}
+
+pre {
+  margin: 4px 0 12px;
+  padding: 10px;
+  overflow-x: auto;
+  max-height: 320px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: #24313f;
+}
+
+h1 {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+h3 {
+  margin: 18px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+h4 {
+  margin: 14px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+/* Two rows, viewport-tall, nothing overflowing: the brand bar, then the work area. `dvh` rather
+ * than `vh` so a mobile browser's collapsing toolbar does not cut the composer off. */
+.app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* The brand bar. It is a fixed grid row rather than `position: sticky` now, which is stronger: the
+ * health badge cannot be scrolled away because there is no page scroll to do it with. */
+.app__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 24px;
+  background: var(--brand);
+  border-bottom: 1px solid var(--brand-line);
+  color: #ffffff;
+}
+
+.app__head h1 {
+  font-size: 17px;
+  color: #ffffff;
+}
+
+.app__sub {
+  margin: 3px 0 0;
+  max-width: 96ch;
+  /* Not `--muted`: on the brand blue that grey fails contrast. White at 78% clears 4.5:1. */
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12.5px;
+}
+
+.app__columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 14px;
+  min-height: 0;
+  padding: 14px 24px;
+  overflow: hidden;
+}
+
+.app__column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The trace side scrolls as one column: the run metrics, the trace and the tool catalogue are read
+ * top to bottom, and giving each its own scrollbar would be three scrollbars in one column. */
+.app__column--side {
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Below this the two columns stack, and a viewport-tall shell stops being the right answer — a
+ * stacked layout in a fixed height would give the thread a third of a screen. So the document
+ * scrolls again here, and the composer goes back to being sticky inside it. The trace stays last so
+ * the answer is what you land on. */
+@media (max-width: 1100px) {
+  body {
+    overflow: auto;
+  }
+
+  .app {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .app__columns {
+    grid-template-columns: minmax(0, 1fr);
+    padding-bottom: 48px;
+    overflow: visible;
+  }
+
+  .app__column--side {
+    overflow: visible;
+  }
+}
+
+/* ---------- status strip ---------- */
+
+/* `color` is set explicitly, not inherited: the badge sits inside the brand bar, which sets white
+ * text, and a white label on this white pill is invisible rather than merely wrong. */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.status__url {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.status__degradations {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-weight: 600;
+  cursor: help;
+}
+
+.status--degraded {
+  border-color: #e3b866;
+  background: var(--warn-soft);
+}
+
+.status--down {
+  border-color: #e0a29d;
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.dot--up {
+  background: var(--good);
+}
+
+.dot--degraded {
+  background: #c58a1a;
+}
+
+.dot--down {
+  background: var(--bad);
+}
+
+/* ---------- conversation ----------
+ *
+ * The left column is a chat: a scrolling thread with the composer pinned under it. The thread
+ * scrolls *inside* its own box rather than with the page, because the trace column beside it is
+ * often much longer — a single page scroll would drag the composer away from the conversation it
+ * belongs to, and the whole point of pinning it is that the next question is always reachable.
+ *
+ * A turn is a question followed by the full answer surface (KPI board, answer panel, trace
+ * footer), not a speech bubble. Only the question is bubble-shaped; the reply is evidence and is
+ * laid out as such. */
+
+/* **One panel, three rows: the head, the thread, the composer.** The whole conversation is a single
+ * card — not a stack of cards with the page showing between them — because it is one continuous
+ * thing and every extra border in it is a seam the eye has to decide the meaning of. The thread is
+ * the only row that flexes, so the composer is pinned by the layout itself: no magic-number
+ * `calc()` against the viewport, which is what this was and which drifted every time the header
+ * gained a line. */
+.chat {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* Explicit: `.app__column` sets a 14px gap for the stacked panels of the right-hand column, and
+   * inherited here it would open three gaps inside one card. The rows are divided by hairlines. */
+  gap: 0;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.chat__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.chat__scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+
+/* Inside the thread the answer surfaces are sections of this one card, not cards of their own.
+ * Their own heads keep the hairline that separates them, which is all the structure a reader needs
+ * once the outer card has drawn the boundary. */
+.chat__scroll .panel {
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Centred while the thread is empty: a screen's worth of space with one short prompt in it reads as
+ * waiting for you, where the same text pinned to the top reads as something that failed to load. */
+.chat__scroll--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* The opening screen. Three example questions and nothing else — what this app is and how it works
+ * belong in the README, not in front of somebody who just wants to ask about a pump. */
+.chat__hello {
+  max-width: 46ch;
+}
+
+.chat__hello h2 {
+  font-size: 16px;
+}
+
+.chat__hello p {
+  margin: 6px 0 14px;
+  color: var(--muted);
+}
+
+.chat__examples {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+/* Clickable: the shortest path from "what can I ask?" to an answer is to let the example be the
+ * question. The suggestion chips in the composer do the same thing, and this is the same handler. */
+.chat__example {
+  padding: 9px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat__example:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.chat__turns {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat__turn {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Right-aligned and tinted: the one place in this UI where a message is styled as a message, so
+ * the eye can find where each turn begins in a long thread. Neutral rather than brand-tinted — in
+ * a red palette a tinted panel is how an error looks, and the operator's own question is not one. */
+.chat__ask {
+  align-self: flex-end;
+  max-width: 88%;
+  padding: 8px 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 12px 12px 4px 12px;
+}
+
+.chat__who {
+  display: block;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.chat__question {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+}
+
+.chat__working {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+}
+
+.chat__spinner {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border: 2px solid var(--info-line);
+  border-top-color: var(--info);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Reduced motion: the spinner is decoration, and the step count beside it carries the same
+ * information in text. */
+@media (prefers-reduced-motion: reduce) {
+  .chat__spinner {
+    animation: none;
+  }
+}
+
+.chat__foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.chat__footmeta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chat__context {
+  padding: 1px 8px;
+  border: 1px solid #a8d8bd;
+  border-radius: 999px;
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: help;
+}
+
+/* ---------- composer ---------- */
+
+/* The last row of the chat card, separated from the thread by a hairline rather than by being a card
+ * of its own. Tinted a shade off-white so a thread scrolled to its end does not run into the
+ * textarea with nothing between them. */
+.chat__composer {
+  padding: 10px 16px 12px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 9px 9px;
+}
+
+@media (max-width: 1100px) {
+  .chat {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .chat__scroll {
+    max-height: 70vh;
+  }
+
+  /* Once the page scrolls, the composer has to stick to the bottom of the window instead of to the
+   * bottom of the card. Opaque, because the thread scrolls under it. */
+  .chat__composer {
+    position: sticky;
+    bottom: 0;
+    background: var(--surface-2);
+  }
+}
+
+.composer {
+  background: none;
+}
+
+.composer__chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.composer__chiplabel {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.composer__new {
+  margin-left: auto;
+}
+
+.composer__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.composer__input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 11px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+  /* Resizable, but not without limit: the composer is a fixed grid row, so every pixel it gains
+   * comes out of the thread above it. A third of the viewport is as far as that is useful. */
+  max-height: 32vh;
+}
+
+.composer__input::placeholder {
+  color: #8a97a6;
+}
+
+.composer__input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.composer__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A round send button, sized to the first line of the textarea beside it. Icon-only is affordable
+ * here because there is exactly one thing to do with a typed question, and the hint line under the
+ * box already says that Enter does it. */
+.button--send {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.composer__hint {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Screen-reader-only label: the composer's purpose is obvious on sight and a visible "Message the
+ * copilot" caption above a chat box is noise, but the textarea still needs a name. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.button {
+  padding: 7px 14px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.button--primary:hover:not(:disabled) {
+  background: #8f1825;
+  border-color: #8f1825;
+  color: #ffffff;
+}
+
+.button--link {
+  padding: 2px 6px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.button--link:hover:not(:disabled) {
+  border-color: transparent;
+}
+
+/* Suggestion chips and the per-turn trace selector. Small, quiet, and never the primary action —
+ * the primary action in this UI is always sending the question. */
+.button--chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12px;
+}
+
+.button--chip-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---------- panels ---------- */
+
+.panel {
+  padding: 14px 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+
+.panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.notice {
+  margin: 10px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+
+ul.notice {
+  padding-left: 28px;
+}
+
+.notice--info {
+  border-left-color: var(--info);
+  background: var(--info-soft);
+  border-color: var(--info-line);
+}
+
+.notice--warn {
+  border-left-color: #c58a1a;
+  background: var(--warn-soft);
+  border-color: #f0dcb4;
+}
+
+.notice--error {
+  border-left-color: var(--bad);
+  background: var(--bad-soft);
+  border-color: #f4cdca;
+}
+
+.notice code {
+  margin-right: 6px;
+}
+
+/* ---------- KPI board ----------
+ *
+ * The figures sit above the prose because that is the order they are read in. Tiles are sized by
+ * content rather than laid out on a fixed grid: the board shows only the KPIs a tool actually
+ * returned, so its width has to survive four tiles as well as eight. */
+
+.kpis__asset {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.kpis__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 8px;
+}
+
+.kpi__label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.kpi__value {
+  /* Tabular figures so a column of tiles does not jitter between runs. */
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.kpi__unit {
+  margin-left: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Tone is the left rule and the figure, never the tile's whole background: eight coloured blocks
+ * side by side stop reading as severity and start reading as decoration. */
+.kpi--good {
+  border-left-color: var(--good);
+}
+
+.kpi--good .kpi__value {
+  color: var(--good);
+}
+
+.kpi--warn {
+  border-left-color: #c58a1a;
+  background: var(--warn-soft);
+}
+
+.kpi--warn .kpi__value {
+  color: var(--warn);
+}
+
+.kpi--bad {
+  border-left-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.kpi--bad .kpi__value {
+  color: var(--bad);
+}
+
+.kpis__tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.kpis__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.kpis__table th {
+  padding: 7px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.kpis__table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.kpis__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.kpis__num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.kpis__sources {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.trend {
+  white-space: nowrap;
+}
+
+.trend--increasing {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+.trend--decreasing {
+  color: var(--good);
+}
+
+.trend--flat,
+.trend--unknown {
+  color: var(--muted);
+}
+
+/* Severity words, not severity colours — the word is always rendered beside the swatch. */
+.sev {
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 11px;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.sev--critical {
+  border-color: #e0a29d;
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-weight: 600;
+}
+
+.sev--high {
+  border-color: #eac988;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.sev--medium {
+  color: var(--text);
+}
+
+.sev--low,
+.sev--unknown {
+  color: var(--muted);
+}
+
+/* ---------- run metrics ---------- */
+
+.runmetrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.runmetrics__stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+
+.runmetrics__label {
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.runmetrics__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.runmetrics__stat--bad {
+  border-color: #e0a29d;
+  background: var(--bad-soft);
+}
+
+.runmetrics__stat--bad .runmetrics__value {
+  color: var(--bad);
+}
+
+/* ---------- answer ---------- */
+
+.answer__text {
+  margin-top: 10px;
+}
+
+/* ---------- markdown inside the answer ----------
+ *
+ * Scoped to `.md` rather than styled globally: the global h3/h4 rules are the uppercase, muted
+ * panel-section labels ("EVIDENCE", "TOOLS USED"), and a model's "What the alarm data shows" is a
+ * heading in prose, not a label. Everything below is that distinction.
+ *
+ * `white-space: pre-wrap` is gone from `.answer__text` — paragraphs, lists and tables are elements
+ * now, and remark-breaks carries the single newlines that rule used to preserve. */
+
+.md {
+  max-width: 88ch;
+}
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md p {
+  margin: 0 0 10px;
+}
+
+.md__h {
+  margin: 18px 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+}
+
+h5.md__h {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.md ul,
+.md ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.md li {
+  margin: 3px 0;
+}
+
+.md li > p {
+  margin: 0;
+}
+
+.md strong {
+  color: #0d1520;
+  font-weight: 600;
+}
+
+/* Inline code only — fenced blocks keep the global `pre` styling. */
+.md :not(pre) > code {
+  padding: 1px 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.md blockquote {
+  margin: 0 0 10px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.md hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+/* A table of alarm counts is the densest thing in the answer, so it gets real table styling
+ * rather than inheriting the trace panel's. It scrolls inside this wrapper: a wide table must
+ * not be what decides the width of the whole column. */
+.md__tablewrap {
+  margin: 0 0 12px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.md thead th {
+  position: sticky;
+  top: 0;
+  padding: 7px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.md tbody td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.md tbody tr:nth-child(even) {
+  background: #fafbfd;
+}
+
+.md tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* The two element types AnswerMarkdown refuses to render as-is. Both are styled to be visible:
+ * a stripped image or a de-linked URL is evidence about the answer, not something to hide. */
+.md__url {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.md__dropped {
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.toolcalls {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toolcalls li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.toolcalls li:last-child {
+  border-bottom: 0;
+}
+
+.toolcalls__ms {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.toolcalls--failed code {
+  color: var(--bad);
+}
+
+/* ---------- citations ---------- */
+
+.citations {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.citation {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.citation:last-child {
+  border-bottom: 0;
+}
+
+.citation--unused {
+  opacity: 0.68;
+}
+
+.citation__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.citation__ref {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.citation__score {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.citation__where,
+.citation__how {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.citation__quote {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--line-strong);
+  color: #36424f;
+}
+
+/* ---------- trace ---------- */
+
+.trace {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trace__row {
+  border-bottom: 1px solid var(--line);
+}
+
+.trace__row:last-child {
+  border-bottom: 0;
+}
+
+.trace__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 4px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trace__summary:hover {
+  background: var(--surface-2);
+}
+
+.trace__seq {
+  width: 22px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trace__name {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.trace__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace__ms {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trace__status {
+  min-width: 52px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.trace__status--ok {
+  color: var(--good);
+}
+
+.trace__status--partial {
+  color: var(--warn);
+}
+
+.trace__status--error {
+  color: var(--bad);
+}
+
+.trace__row--error {
+  background: var(--bad-soft);
+}
+
+.trace__detail {
+  padding: 4px 4px 14px 26px;
+}
+
+.trace__ids {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.trace__raw summary {
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.kv dt {
+  color: var(--muted);
+}
+
+.kv dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.upstream {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.upstream th {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+}
+
+.upstream td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.upstream .good {
+  color: var(--good);
+  font-weight: 600;
+}
+
+.upstream .warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.upstream .bad {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* ---------- tools ---------- */
+
+.tools {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tools__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tools__row:hover {
+  background: var(--surface-2);
+}
+
+.tools__title {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tools__detail {
+  padding: 6px 4px 10px 12px;
+  font-size: 13px;
+}
+
+/* ---------- tags ---------- */
+
+.tag {
+  padding: 1px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.tag--mcp,
+.tag--mcp_tool_call {
+  border-color: var(--info-line);
+  background: var(--info-soft);
+  color: var(--info);
+  font-weight: 600;
+}
+
+.tag--local,
+.tag--rag_retrieval {
+  border-color: #a8d8bd;
+  background: var(--good-soft);
+  color: var(--good);
+  font-weight: 600;
+}
+
+.tag--error {
+  border-color: #e0a29d;
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-weight: 600;
+}

@@ -1,0 +1,207 @@
+# Four services plus a one-shot index build.
+#
+# UNVERIFIED: `docker` is not installed on the machine this was written on, so this file has
+# never been run. It is written against the assignment's own compose contract and the documented
+# behaviour of each image. The tested path is the `make` targets in the README. See
+# docs/known-limitations.md.
+#
+# One deliberate deviation from that contract: it names `MCP_SERVER_URL=http://alarm-mcp:9000`
+# and the MCP server here listens on **9100**. Inside the compose network 9000 would be free, so
+# this is not a conflict fix — it is so the repo has exactly one MCP port number. The host-side
+# default had to move (a corporate agent holds 127.0.0.1:9000 on the build machine), and a
+# container that disagrees with `.env` about the port is the kind of split that produces an
+# opaque MCP content-type error rather than a connection refused.
+#
+#   cp .env.example .env     # set GEMINI_API_KEY
+#   docker compose up --build
+#   open http://localhost:5173
+#
+# Health checks use `python -c` rather than curl: `python:3.13-slim` ships no curl, and adding
+# one to the image to test the image is a layer that exists only for the test.
+
+name: alarm-copilot
+
+services:
+  # --- the source system -------------------------------------------------------------------
+  alarm-api:
+    build: .
+    image: alarm-copilot/python
+    command: >
+      uvicorn apps.alarm_api.main:create_app --factory --host 0.0.0.0 --port 8000
+    environment:
+      # The one credential this service needs, and the only one it can see. It has no LLM
+      # setting and no RAG setting, which is what makes "the simulator cannot leak the gateway
+      # token" a property of the deployment rather than a promise.
+      ALARM_API_TOKEN: ${ALARM_API_TOKEN:-demo-token}
+      SEED_RANDOM_SEED: ${SEED_RANDOM_SEED:-1729}
+      SEED_DAYS_OF_HISTORY: ${SEED_DAYS_OF_HISTORY:-400}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # `/health` is the one endpoint that takes no auth, per the collection — so a health
+      # check needs no token, which is the point of it being exempt.
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, urllib.request
+          sys.exit(0 if urllib.request.urlopen("http://localhost:8000/health", timeout=3).status == 200 else 1)
+      interval: 10s
+      timeout: 5s
+      # Building the app generates the whole dataset, so the first check must not run
+      # immediately or the container is restarted while it is still seeding.
+      start_period: 30s
+      retries: 5
+
+  # --- the MCP server: the only path to the alarm API ---------------------------------------
+  alarm-mcp:
+    build: .
+    image: alarm-copilot/python
+    command: >
+      python -m alarm_management --transport streamable-http --host 0.0.0.0 --port 9100
+    environment:
+      ALARM_API_BASE_URL: http://alarm-api:8000
+      ALARM_API_TOKEN: ${ALARM_API_TOKEN:-demo-token}
+      ALARM_API_TIMEOUT_SECONDS: ${ALARM_API_TIMEOUT_SECONDS:-10}
+      ALARM_API_MAX_RETRIES: ${ALARM_API_MAX_RETRIES:-3}
+      MCP_SERVER_HOST: 0.0.0.0
+      MCP_SERVER_PORT: 9100
+      # Must be set under this exact name. A field aliased to a bare `PATH` would resolve from
+      # the shell's, and the server would advertise that as its endpoint.
+      MCP_SERVER_PATH: /mcp
+      MCP_CLIENT_ID: ${MCP_CLIENT_ID:-alarm-copilot}
+      MCP_MAX_ROWS: ${MCP_MAX_ROWS:-100}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      # Published so the server is independently reachable — MCP Inspector, curl, `make
+      # mcp-smoke` — which is a requirement, not a convenience.
+      - "9100:9100"
+    depends_on:
+      alarm-api:
+        condition: service_healthy
+    healthcheck:
+      # A TCP connect, not an HTTP request: streamable HTTP rejects a bare GET on /mcp (it
+      # wants a POST with an MCP session), so a 4xx here would mean "working" and a check that
+      # treats 4xx as healthy tells you nothing. The socket is the honest signal.
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import socket, sys
+          sys.exit(0 if socket.create_connection(("localhost", 9100), timeout=3) else 1)
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+
+  # --- one-shot: build the RAG index before the backend opens it ---------------------------
+  rag-ingest:
+    build: .
+    image: alarm-copilot/python
+    command: python -m rag.ingestion.build_index
+    environment:
+      RAG_DOCUMENTS_DIR: rag/documents
+      RAG_QDRANT_PATH: /app/.qdrant
+      RAG_COLLECTION: ${RAG_COLLECTION:-alarm_procedures}
+      RAG_EMBEDDER: ${RAG_EMBEDDER:-fastembed}
+      RAG_EMBED_MODEL: ${RAG_EMBED_MODEL:-BAAI/bge-small-en-v1.5}
+      # Empty means "download from HuggingFace on first use", which needs network from inside
+      # the container. Where that is blocked or TLS is intercepted, run `make fetch-model` on
+      # the host and set this to /app/.models/bge-small-en-v1.5 — the volume below makes the
+      # host's copy visible here.
+      RAG_EMBED_MODEL_PATH: ${RAG_EMBED_MODEL_PATH:-}
+      RAG_CHUNK_SIZE: ${RAG_CHUNK_SIZE:-380}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - qdrant-index:/app/.qdrant
+      - ./.models:/app/.models:ro
+    restart: "no"
+
+  # --- the copilot ------------------------------------------------------------------------
+  copilot-backend:
+    build: .
+    image: alarm-copilot/python
+    command: >
+      uvicorn apps.backend.api.main:app --host 0.0.0.0 --port 8080
+    environment:
+      # Note what is absent: no ALARM_API_BASE_URL and no ALARM_API_TOKEN. The backend has no
+      # setting for either, so it cannot reach the alarm API except through MCP. The rule is
+      # enforced by the configuration, not by review.
+      MCP_SERVER_URL: http://alarm-mcp:9100/mcp
+      MCP_CLIENT_ID: ${MCP_CLIENT_ID:-alarm-copilot}
+      MCP_TOOL_TIMEOUT_SECONDS: ${MCP_TOOL_TIMEOUT_SECONDS:-30}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta}
+      LLM_MODEL: ${LLM_MODEL:-gemini-flash-latest}
+      LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-2048}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-90}
+      LLM_NATIVE_TOOLS: ${LLM_NATIVE_TOOLS:-true}
+      LLM_MAX_RETRIES: ${LLM_MAX_RETRIES:-2}
+      GEMINI_THINKING_BUDGET: ${GEMINI_THINKING_BUDGET:-}
+      # `:?` rather than a default: a missing key must fail at `docker compose up` with a
+      # message naming the variable, not at the first question with a 400 from the API.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?set GEMINI_API_KEY in .env}
+      RAG_QDRANT_PATH: /app/.qdrant
+      RAG_COLLECTION: ${RAG_COLLECTION:-alarm_procedures}
+      RAG_EMBEDDER: ${RAG_EMBEDDER:-fastembed}
+      RAG_EMBED_MODEL: ${RAG_EMBED_MODEL:-BAAI/bge-small-en-v1.5}
+      RAG_EMBED_MODEL_PATH: ${RAG_EMBED_MODEL_PATH:-}
+      RAG_TOP_K: ${RAG_TOP_K:-5}
+      RAG_CANDIDATES: ${RAG_CANDIDATES:-20}
+      RAG_MIN_RELEVANCE: ${RAG_MIN_RELEVANCE:-0.60}
+      RAG_RRF_K: ${RAG_RRF_K:-2}
+      # The origin the browser loads the GUI from, which is the host's published port.
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:5173}
+      ORCHESTRATOR_MAX_STEPS: ${ORCHESTRATOR_MAX_STEPS:-8}
+      TRACE_RETENTION: ${TRACE_RETENTION:-50}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8080:8080"
+    volumes:
+      # Read-only: embedded Qdrant takes an exclusive lock on this directory, and the backend
+      # is the only long-lived reader. `rag-ingest` has exited by the time this starts — which
+      # is what `service_completed_successfully` below is for, not merely ordering.
+      - qdrant-index:/app/.qdrant:ro
+      - ./.models:/app/.models:ro
+    depends_on:
+      alarm-mcp:
+        condition: service_healthy
+      rag-ingest:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, urllib.request
+          sys.exit(0 if urllib.request.urlopen("http://localhost:8080/health", timeout=3).status == 200 else 1)
+      interval: 10s
+      timeout: 5s
+      # Loading the embedding model is the slow part of startup.
+      start_period: 45s
+      retries: 5
+
+  # --- the GUI ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./apps/frontend
+      args:
+        # The URL the *browser* uses, so it is the host's published port. Compose's internal
+        # hostname would be unresolvable from outside the network, and Vite bakes this in at
+        # build time — changing it later means rebuilding the image.
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:8080}
+    image: alarm-copilot/frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      copilot-backend:
+        condition: service_healthy
+
+volumes:
+  # Named rather than a bind mount: the index is generated output, and a bind mount would let
+  # the host's `.qdrant` — possibly built with a different embedder — leak into the container.
+  qdrant-index:

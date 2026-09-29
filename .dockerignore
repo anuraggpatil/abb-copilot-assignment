@@ -1,0 +1,44 @@
+# Keep the build context small and keep host state out of the image. The first entry is the
+# one that matters: a `.env` copied into an image is a secret in a layer, and layers are
+# shared, pushed and cached.
+.env
+.env.local
+*.pem
+*.key
+
+.git
+.github
+
+# Host virtualenv and caches — the image installs its own from the lockfile.
+.venv
+venv
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+coverage.xml
+htmlcov
+
+# Generated at runtime in the container, or mounted as a volume. A host copy would be built
+# against whatever embedder the host was configured for.
+.qdrant
+.models
+test-data/generated
+test-data/*.db
+
+# The frontend has its own build context and its own .dockerignore concerns; node_modules is
+# never worth copying either way.
+node_modules
+apps/frontend/dist
+apps/frontend/.vite
+apps/frontend/tsconfig.tsbuildinfo
+
+# Not needed to run the services. Tests are deliberately excluded: the image is a runtime
+# artefact, and `make check` is where the suite runs.
+tests
+docs
+postman
+.DS_Store
