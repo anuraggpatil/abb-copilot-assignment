@@ -461,9 +461,34 @@ retyped from memory.
 
 ## Demo video
 
-_Link to be added._ Script: [`docs/demo-script.md`](docs/demo-script.md). It covers tool discovery,
-an MCP execution trace with raw request and response, RAG citations, one successful scenario and one
-degraded scenario.
+▶️ **[`docs/media/demo-recording.mp4`](docs/media/demo-recording.mp4)** — credentials redacted. GitHub
+plays it inline on the file page; 54 MB, so clone or download it for smoother local playback. Script:
+[`docs/demo-script.md`](docs/demo-script.md). It covers tool discovery, an MCP execution trace with
+raw request and response, RAG citations, one successful scenario and one degraded scenario.
+
+## Screenshots
+
+**Tool discovery, before any question.** Six tools resolved at startup — five reached over MCP
+(`search_assets`, `get_alarms`, `get_alarm_summary`, `get_recurring_alarms`,
+`get_operator_recommendations`) and `search_procedures` served locally by the document index. The
+header carries the live provider, planner mode and MCP reachability.
+
+![Copilot on load: empty conversation, six-tool catalogue, empty execution trace](docs/media/ui-initial-state.png)
+
+**The acceptance scenario, answered.** For _"Why does Boiler Feed Pump 101 keep raising high-severity
+alarms, and what should we do about it?"_ the copilot reports 96 alarms over 90 days (47 high-or-above,
+95% recurring, 34% unacknowledged) and separates the two recurring patterns by trend — Bearing
+Vibration High rising 10 → 13 across the window, Lube Oil Pressure Low flat. The banner above the
+answer is the citation guard firing: two references the model produced, `MM-CP-MAINT §5` and `§7`,
+were never retrieved, so they were stripped rather than passed off as sourced.
+
+![Answered scenario: alarm KPI tiles, recurring-pattern table, and the unsupported-reference guard banner](docs/media/ui-answer-kpis.png)
+
+**Citations and per-call timings.** Each quoted passage carries its document, revision and retrieval
+score, and every tool call is listed with its own latency across the 21 traced steps — so a reviewer
+can tell which claim came from which passage and which call cost the time.
+
+![Cited procedure passages with relevance scores, the tools-used list with per-call latencies, and follow-up prompts](docs/media/ui-citations-and-tools.png)
 
 ## How AI tools were used
 
